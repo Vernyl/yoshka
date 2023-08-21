@@ -193,7 +193,7 @@ contract Yoshka is Ownable {
     }
 
     mapping(uint256 => MusicItem) public musicItems;
-    mapping(uint256 => address) private itemCreators; // Mapping to track creators
+    mapping(uint256 => address) private itemCreators;
 
     event NFTMinted(
         uint256 indexed tokenId,
@@ -209,10 +209,7 @@ contract Yoshka is Ownable {
     mapping(address => bool) private admins;
     uint256 private nextTokenId;
 
-    constructor() {
-        admins[msg.sender] = true;
-        nextTokenId = 1;
-    }
+    bool private reentrancyLock = false;
 
     modifier onlyAdmin() {
         require(
@@ -220,6 +217,18 @@ contract Yoshka is Ownable {
             "Only admins can call this function"
         );
         _;
+    }
+
+    modifier noReentrancy() {
+        require(!reentrancyLock, "Reentrant call");
+        reentrancyLock = true;
+        _;
+        reentrancyLock = false;
+    }
+
+    constructor() {
+        admins[msg.sender] = true;
+        nextTokenId = 1;
     }
 
     function addAdmin(address newAdmin) external onlyOwner {
@@ -230,15 +239,6 @@ contract Yoshka is Ownable {
     function removeAdmin(address admin) external onlyOwner {
         require(admins[admin], "Not an admin");
         admins[admin] = false;
-    }
-
-    bool private reentrancyLock = false;
-
-    modifier noReentrancy() {
-        require(!reentrancyLock, "Reentrant call");
-        reentrancyLock = true;
-        _;
-        reentrancyLock = false;
     }
 
     function mintNFT(
@@ -271,7 +271,7 @@ contract Yoshka is Ownable {
         });
 
         musicItems[tokenId] = newItem;
-        itemCreators[tokenId] = msg.sender; // Set the creator for this token
+        itemCreators[tokenId] = msg.sender;
 
         emit NFTMinted(tokenId, msg.sender, _title);
     }
@@ -309,7 +309,7 @@ contract Yoshka is Ownable {
             });
 
             musicItems[tokenId] = newItem;
-            itemCreators[tokenId] = msg.sender; // Set the creator for this token
+            itemCreators[tokenId] = msg.sender;
 
             emit NFTMinted(tokenId, msg.sender, _titles[i]);
         }
@@ -328,6 +328,29 @@ contract Yoshka is Ownable {
 
             emit OwnershipTransferred(_tokenIds[i], msg.sender, _to);
         }
+    }
+
+    function ownedNFTCount(address user) public view returns (uint256) {
+        uint256 ownedCount = 0;
+        for (uint256 tokenId = 1; tokenId < nextTokenId; tokenId++) {
+            if (itemCreators[tokenId] == user) {
+                ownedCount++;
+            }
+        }
+        return ownedCount;
+    }
+
+    function ownedNFTs(address user) public view returns (uint256[] memory) {
+        uint256 ownedCount = ownedNFTCount(user);
+        uint256[] memory ownedNFTs = new uint256[](ownedCount);
+        uint256 index = 0;
+        for (uint256 tokenId = 1; tokenId < nextTokenId; tokenId++) {
+            if (itemCreators[tokenId] == user) {
+                ownedNFTs[index] = tokenId;
+                index++;
+            }
+        }
+        return ownedNFTs;
     }
 
     function mintNFTWithPayment(
@@ -362,13 +385,150 @@ contract Yoshka is Ownable {
         });
 
         musicItems[tokenId] = newItem;
-        itemCreators[tokenId] = msg.sender; // Set the creator for this token
+        itemCreators[tokenId] = msg.sender;
 
         emit NFTMinted(tokenId, msg.sender, _title);
 
-        // Refund excess payment
         if (msg.value > _initialPrice) {
             payable(msg.sender).transfer(msg.value - _initialPrice);
         }
+    }
+
+    function getMusicItemMetadata(uint256 tokenId)
+        external
+        view
+        returns (
+            MusicType musicType,
+            string memory title,
+            string memory description,
+            string memory fileType,
+            string memory duration,
+            string memory thumbnailURI,
+            string memory fileURI,
+            uint256 dateOfCreation,
+            uint256 initialPrice,
+            uint8 royaltyPercentage,
+            uint256[] memory ingredients
+        )
+    {
+        require(tokenId > 0 && tokenId < nextTokenId, "Invalid token ID");
+
+        MusicItem memory musicItem = musicItems[tokenId];
+
+        return (
+            musicItem.musicType,
+            musicItem.title,
+            musicItem.description,
+            musicItem.fileType,
+            musicItem.duration,
+            musicItem.thumbnailURI,
+            musicItem.fileURI,
+            musicItem.dateOfCreation,
+            musicItem.initialPrice,
+            musicItem.royaltyPercentage,
+            musicItem.ingredients
+        );
+    }
+
+    function distributeRoyalties(uint256 tokenId, uint256 salePrice) internal {
+        require(tokenId > 0 && tokenId < nextTokenId, "Invalid token ID");
+
+        address creator = itemCreators[tokenId];
+        require(creator != address(0), "Invalid creator address");
+
+        uint256 royaltyAmount =
+            (salePrice * musicItems[tokenId].royaltyPercentage) / 100;
+        payable(creator).transfer(royaltyAmount);
+    }
+
+    function updateNFTMetadata(
+        uint256 tokenId,
+        string memory newTitle,
+        string memory newDescription,
+        string memory newThumbnailURI,
+        string memory newFileURI
+    ) external onlyAdmin {
+        require(tokenId > 0 && tokenId < nextTokenId, "Invalid token ID");
+
+        MusicItem storage musicItem = musicItems[tokenId];
+
+        musicItem.title = newTitle;
+        musicItem.description = newDescription;
+        musicItem.thumbnailURI = newThumbnailURI;
+        musicItem.fileURI = newFileURI;
+    }
+
+    function burnNFT(uint256 tokenId) external {
+        require(tokenId > 0 && tokenId < nextTokenId, "Invalid token ID");
+        require(itemCreators[tokenId] == msg.sender, "Not the owner");
+
+        delete musicItems[tokenId];
+        delete itemCreators[tokenId];
+    }
+
+    function upgradeContract(address newContractAddress) external onlyOwner {
+        payable(newContractAddress).transfer(address(this).balance);
+        transferOwnership(newContractAddress);
+    }
+
+    bool private paused = false;
+
+    modifier whenNotPaused() {
+        require(!paused, "Contract is paused");
+        _;
+    }
+
+    function pauseContract() external onlyAdmin {
+        paused = true;
+    }
+
+    function unpauseContract() external onlyAdmin {
+        paused = false;
+    }
+
+    function batchTransferNFTsToAddress(
+        uint256[] memory tokenIds,
+        address to
+    ) external onlyAdmin {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            uint256 tokenId = tokenIds[i];
+            require(itemCreators[tokenId] != address(0), "Invalid token ID");
+
+            itemCreators[tokenId] = to;
+
+            emit OwnershipTransferred(tokenId, itemCreators[tokenId], to);
+        }
+    }
+
+    function setRoyaltyPercentage(uint256 tokenId, uint8 newRoyaltyPercentage)
+        external
+        onlyAdmin
+    {
+        require(tokenId > 0 && tokenId < nextTokenId, "Invalid token ID");
+        require(newRoyaltyPercentage <= 100, "Invalid royalty percentage");
+
+        musicItems[tokenId].royaltyPercentage = newRoyaltyPercentage;
+    }
+
+    function withdrawBalance(address payable recipient) external onlyOwner {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No balance to withdraw");
+
+        recipient.transfer(balance);
+    }
+
+    function transferNFTOwnership(uint256 tokenId, address newOwner)
+        external
+    {
+        require(tokenId > 0 && tokenId < nextTokenId, "Invalid token ID");
+        require(itemCreators[tokenId] == msg.sender, "Not the owner");
+
+        itemCreators[tokenId] = newOwner;
+
+        emit OwnershipTransferred(tokenId, msg.sender, newOwner);
+    }
+
+    function getTotalSupply() external view returns (uint256) {
+        return nextTokenId - 1;
     }
 }
