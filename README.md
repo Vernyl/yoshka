@@ -9,6 +9,8 @@ Yoshka aims to revolutionize the structure and valuation of songs. Using the Cel
 
 🌟 **Video Walkthrough**: [See what we built](#Walkthrough-Video-Link-Here)  - coming very very soon
 
+Please feel free to contact us [here](mailto:tolugbesan@gmail.com)
+
 ![Yoshka](screenshot.png)
 
 ## Overview
