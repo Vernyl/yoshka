@@ -5,6 +5,7 @@ import Logo from "./Logo"
 import axios from "axios";
 
 function Publish({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<React.SetStateAction<boolean>>}) {
+    const [isLoading, setIsLoading] = useState(false)
     const pinata_api_key = process.env.NEXT_PUBLIC_PINATA_API_KEY;
     const pinata_secret_api_key = process.env.NEXT_PUBLIC_PINATA_API_SECRET;
     const [name, setName] = useState('');
@@ -14,6 +15,7 @@ function Publish({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<Reac
 
     const handleAddAsset = async () => {
         setError(null);
+        setIsLoading(true)
 
         if (!name) {
             setError('Please enter an asset name.');
@@ -45,6 +47,7 @@ function Publish({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<Reac
             console.log('IPFS Hash:', ipfsHash);
 
             // Logic to handle adding asset with the IPFS hash
+            setIsLoading(false)
             setOpen(false);
         } catch (error) {
             console.error('Error uploading to Pinata:', error);
@@ -151,7 +154,7 @@ function Publish({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<Reac
                         className="inline-flex w-full justify-center rounded-md bg-teal-400 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 sm:ml-3 sm:w-auto"
                         onClick={handleAddAsset}
                     >
-                    Publish
+                    {isLoading ? "Loading..." : "Publish"}
                   </button>
                   <button
                     type="button"

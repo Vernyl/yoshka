@@ -8,27 +8,16 @@ function AddAsset({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<Rea
     const pinata_api_key = process.env.NEXT_PUBLIC_PINATA_API_KEY;
     const pinata_secret_api_key = process.env.NEXT_PUBLIC_PINATA_API_SECRET;
 
+    const [isLoading, setIsLoading] = useState(false)
     const [name, setName] = useState('');
     const [artFile, setArtFile] = useState<File | null>(null);
     const [audioFile, setAudioFile] = useState<File | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [status, setStatus] = useState('');
 
-    const handleAddAsset = async () => {
-        setError(null);
-
-        if (!name) {
-            setError('Please enter an asset name.');
-            return;
-        }
-
-        if (!artFile || !audioFile) {
-            setError('Please upload both an art file and an audio file.');
-            return;
-        }
-
+    const uploadFileToPinata = async (file: File): Promise<string | null> => {
         const formData = new FormData();
-        formData.append('file', artFile, artFile.name); // Use 'file' for artFile
-        formData.append('file', audioFile, audioFile.name); // Use 'file' for audioFile
+        formData.append('file', file);
 
         const pinataAPIUrl = 'https://api.pinata.cloud/pinning/pinFileToIPFS';
 
@@ -41,16 +30,47 @@ function AddAsset({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<Rea
                 },
             });
 
-            const ipfsHash = response.data.IpfsHash;
-            console.log('IPFS Hash:', ipfsHash);
-
-            // Logic to handle adding asset with the IPFS hash
-            setOpen(false);
+            return response.data.IpfsHash;
         } catch (error) {
             console.error('Error uploading to Pinata:', error);
+            return null;
+        }
+    };
+
+    const handleAddAsset = async () => {
+        setError(null);
+        setIsLoading(true)
+
+        if (!name) {
+            setError('Please enter an asset name.');
+            return;
+        }
+
+        if (!artFile || !audioFile) {
+            setError('Please upload both an art file and an audio file.');
+            return;
+        }
+
+        try {
+            const artIpfsHash = await uploadFileToPinata(artFile);
+            const audioIpfsHash = await uploadFileToPinata(audioFile);
+
+            if (artIpfsHash && audioIpfsHash) {
+                console.log('Art IPFS Hash:', artIpfsHash);
+                console.log('Audio IPFS Hash:', audioIpfsHash);
+
+                // Logic to handle adding asset with the IPFS hashes
+                setStatus('Asset uploaded successfully');
+                setIsLoading(false)
+                setOpen(false);
+            } else {
+                setError('An error occurred while uploading to Pinata.');
+            }
+        } catch (error) {
             setError('An error occurred while uploading to Pinata.');
         }
     };
+
 
     return (
     <Transition.Root show={open} as={Fragment}>
@@ -158,6 +178,7 @@ function AddAsset({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<Rea
                     </div>
                   </div>
                 </div>
+                  <div>{status}</div>
                   {error && (
                       <div className="mt-2 text-red-600 text-sm">{error}</div>
                   )}
@@ -167,7 +188,7 @@ function AddAsset({ open, setOpen }: {open: boolean, setOpen: React.Dispatch<Rea
                         className="inline-flex w-full justify-center rounded-md bg-teal-400 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 sm:ml-3 sm:w-auto"
                         onClick={handleAddAsset}
                     >
-                        Add Asset
+                        {isLoading ? "Loading..." : "Add Asset"}
                     </button>
                   <button
                     type="button"
